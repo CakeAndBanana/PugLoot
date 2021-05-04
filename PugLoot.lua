@@ -11,8 +11,11 @@ end
 reset_roll_state()
 
 local ui_button_random = nil
+local ui_button_msos = nil
+local ui_button_ms = nil
 local ui_button_start = nil
-
+local script_string = nil
+local ms_os = false
 
 local get_announce_target = function (is_roll_msg)
   if IsInRaid() then
@@ -61,8 +64,12 @@ local do_finish_roll = function ()
     return a.roll > b.roll
   end)
 
-  if #highest_rollers == 0 then
-    SendChatMessage('{rt7} Nobody rolled for ' .. roll_state.rolling_item .. '!', get_announce_target(false), nil, nil)
+  if #highest_rollers == 0 and ms_os == true then
+    ms_os = false;
+    SendChatMessage('{rt7} Nobody rolled for MS: ' .. roll_state.rolling_item .. '!', get_announce_target(false), nil, nil)
+    script_string = '/pugloot startos ' .. roll_state.rolling_item
+  elseif #highest_rollers == 0 then
+    SendChatMessage('{rt7} Nobody rolled for: ' .. roll_state.rolling_item .. '!', get_announce_target(false), nil, nil)
   elseif #highest_rollers == 1 then
     SendChatMessage('{rt4} ' .. highest_rollers[1] .. ' wins ' .. roll_state.rolling_item .. ' with a ' .. max_roll, get_announce_target(false), nil, nil)
   else
@@ -97,6 +104,7 @@ local do_finish_roll = function ()
   end
 
   reset_roll_state()
+
 end
 
 local handle_tick = function ()
@@ -108,17 +116,25 @@ local handle_tick = function ()
   local iter = roll_state.ticker._remainingIterations - 1
 
   if ui_button_start then
-    ui_button_start:SetText('Cancel (' .. tostring(iter) .. ')')
+    ui_button_start:SetText('Cancel (' .. tostring(duration) .. ')')
+  elseif ui_button_ms then
+    ui_button_ms:SetText('Cancel (' .. tostring(duration) .. ')')
+  elseif ui_button_msos then
+    ui_button_msos:SetText('Cancel (' .. tostring(duration) .. ')')
   end
 
   if iter == 0 then
     do_finish_roll()
+    if script_string ~= nil then
+      DEFAULT_CHAT_FRAME.editBox:SetText(script_string) ChatEdit_SendText(DEFAULT_CHAT_FRAME.editBox, 0)
+      script_string = nil
+    end
   elseif iter <= 3 then
     SendChatMessage('{rt1} ' .. tostring(iter) .. ' {rt1}', get_announce_target(false), nil, nil)
   end
 end
 
-local do_start_roll = function (item_link, duration)
+local do_start_roll = function (item_link, duration, type)
   roll_state.rolling_item = item_link
   roll_state.num_members = GetNumGroupMembers()
 
@@ -127,17 +143,30 @@ local do_start_roll = function (item_link, duration)
     table.insert(roll_state.members, name)
   end
 
-  SendChatMessage('ROLL ' .. item_link .. ' (' .. tostring(duration) .. ' seconds)', get_announce_target(true), nil, nil)
+  if type == 'MSOS' then
+    SendChatMessage('MS ' .. item_link .. ' (' .. tostring(duration) .. ' seconds)', get_announce_target(true), nil, nil)
+  else
+    SendChatMessage(type .. ' ' .. item_link .. ' (' .. tostring(duration) .. ' seconds)', get_announce_target(true), nil, nil)
+  end
 
   if ui_button_start then
     ui_button_start:SetText('Cancel (' .. tostring(duration) .. ')')
+  elseif ui_button_ms then
+    ui_button_ms:SetText('Cancel (' .. tostring(duration) .. ')')
+  elseif ui_button_msos then
+    ui_button_msos:SetText('Cancel (' .. tostring(duration) .. ')')
   end
 
   if ui_button_random then
     ui_button_random:Disable()
   end
-
-  roll_state.ticker = C_Timer.NewTicker(1, handle_tick, duration)
+  
+  if type == 'MSOS' then
+    ms_os = true;
+    roll_state.ticker = C_Timer.NewTicker(1, handle_tick, duration)
+  else
+    roll_state.ticker = C_Timer.NewTicker(1, handle_tick, duration)
+  end
 end
 
 local handle_system_msg = function (msg)
@@ -216,9 +245,27 @@ local handle_loot_button = function (kind)
     if not roll_state.rolling_item then
       do_random_loot(link)
     end
+  elseif kind == 'MSOS' then
+    if not roll_state.rolling_item then
+      do_start_roll(link, 15, 'MSOS')
+    else
+      do_cancel_roll()
+    end
+  elseif kind == 'MS' then
+    if not roll_state.rolling_item then
+      do_start_roll(link, 15, 'MS')
+    else
+      do_cancel_roll()
+    end
+  elseif kind == 'OS' then
+    if not roll_state.rolling_item then
+      do_start_roll(link, 15, 'OS')
+    else
+      do_cancel_roll()
+    end
   elseif kind == 'START' then
     if not roll_state.rolling_item then
-      do_start_roll(link, 15)
+      do_start_roll(link, 15, 'ROLL')
     else
       do_cancel_roll()
     end
@@ -250,8 +297,41 @@ local update_master_loot_frame = function ()
     btn:SetPushedTexture(ptex)
   end
 
+  ui_button_msos = CreateFrame('Button', 'PugLootButtonMSOS', MasterLooterFrame)
+  ui_button_msos:SetPoint('TOPLEFT', MasterLooterFrame, 'TOPRIGHT')
+  ui_button_msos:SetText('MSOS')
+  ui_button_msos:SetWidth(72)
+  ui_button_msos:SetHeight(20)
+  ui_button_msos:SetNormalFontObject('GameFontNormalSmall')
+  ui_button_msos:SetScript('OnClick', function ()
+    handle_loot_button('MSOS')
+  end)
+  set_textures(ui_button_msos)
+
+  ui_button_ms = CreateFrame('Button', 'PugLootButtonMS', MasterLooterFrame)
+  ui_button_ms:SetPoint('TOPLEFT', ui_button_msos, 'TOPRIGHT')
+  ui_button_ms:SetText('MS')
+  ui_button_ms:SetWidth(72)
+  ui_button_ms:SetHeight(20)
+  ui_button_ms:SetNormalFontObject('GameFontNormalSmall')
+  ui_button_ms:SetScript('OnClick', function ()
+    handle_loot_button('MS')
+  end)
+  set_textures(ui_button_ms)
+
+  ui_button_start = CreateFrame('Button', 'PugLootButtonStart', MasterLooterFrame)
+  ui_button_start:SetPoint('TOP', ui_button_ms, 'TOPRIGHT')
+  ui_button_start:SetText('Start roll')
+  ui_button_start:SetWidth(72)
+  ui_button_start:SetHeight(20)
+  ui_button_start:SetNormalFontObject('GameFontNormalSmall')
+  ui_button_start:SetScript('OnClick', function ()
+    handle_loot_button('ROLL')
+  end)
+  set_textures(ui_button_start)
+
   ui_button_random = CreateFrame('Button', 'PugLootButtonRandom', MasterLooterFrame)
-  ui_button_random:SetPoint('TOPLEFT', MasterLooterFrame, 'TOPRIGHT')
+  ui_button_random:SetPoint('TOPLEFT', ui_button_start, 'BOTTOM')
   ui_button_random:SetText('Random')
   ui_button_random:SetWidth(72)
   ui_button_random:SetHeight(20)
@@ -260,17 +340,6 @@ local update_master_loot_frame = function ()
     handle_loot_button('RANDOM')
   end)
   set_textures(ui_button_random)
-
-  ui_button_start = CreateFrame('Button', 'PugLootButtonStart', MasterLooterFrame)
-  ui_button_start:SetPoint('TOP', ui_button_random, 'BOTTOM')
-  ui_button_start:SetText('Start roll')
-  ui_button_start:SetWidth(72)
-  ui_button_start:SetHeight(20)
-  ui_button_start:SetNormalFontObject('GameFontNormalSmall')
-  ui_button_start:SetScript('OnClick', function ()
-    handle_loot_button('START')
-  end)
-  set_textures(ui_button_start)
 end
 
 local frame = CreateFrame('frame', 'PugLootEventFrame')
@@ -309,9 +378,21 @@ SlashCmdList["PUGLOOT"] = function (arg_str)
     else
       print('There is an ongoing roll for ' .. roll_state.rolling_item)
     end
-  elseif cmd == 'start' and rest then
+  elseif cmd == 'startms' and rest then
     if not roll_state.rolling_item then
-      do_start_roll(rest, 15)
+      do_start_roll(rest, 15, 'MS')
+    else
+      print('There is an ongoing roll for ' .. roll_state.rolling_item)
+    end
+  elseif cmd == 'startmsos' and rest then
+    if not roll_state.rolling_item then
+      do_start_roll(rest, 15, 'MSOS')
+    else
+      print('There is an ongoing roll for ' .. roll_state.rolling_item)
+    end
+  elseif cmd == 'startos' and rest then
+    if not roll_state.rolling_item then
+      do_start_roll(rest, 15, 'OS')
     else
       print('There is an ongoing roll for ' .. roll_state.rolling_item)
     end
@@ -322,7 +403,6 @@ SlashCmdList["PUGLOOT"] = function (arg_str)
       print('There is no ongoing roll')
     end
   else
-    print('Usage: /pugloot random [item] | /pugloot start [item] | /pugloot cancel')
+    print('Usage: /pugloot random [item] | /pugloot start [item] | /pugloot msos [item] | /pugloot cancel')
   end
 end
-
